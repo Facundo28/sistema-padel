@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-brand-dark antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Reveal Animations */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-fade {
+  opacity: 0;
+  transition: opacity 1.2s ease-out;
+}
+
+.reveal-fade.visible {
+  opacity: 1;
+}
+
+.reveal-scale {
+  opacity: 0;
+  transform: scale(0.95);
+  transition: all 1s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.reveal-scale.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@keyframes slideDownAndFade {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-down {
+  animation: slideDownAndFade 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Infinite Marquee Scrolls */
+@keyframes scrollLeft {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes scrollRight {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+.animate-scroll-left {
+  animation: scrollLeft 40s linear infinite;
+}
+
+.animate-scroll-right {
+  animation: scrollRight 40s linear infinite;
+}
+
+/* Custom Scrollbar for Sidebar/Content */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #d1d5db;
+}

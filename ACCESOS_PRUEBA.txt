@@ -1,0 +1,27 @@
+USUARIOS DE PRUEBA - PADELPRO
+---------------------------
+
+Todos los usuarios tienen la contraseña: password123
+
+1. Carlos Gomez
+   DNI: 10000001
+   Categoría: 8va C
+
+2. Lucia Fernandez
+   DNI: 10000002
+   Categoría: 7ma C
+
+3. Pedro Rodriguez
+   DNI: 10000003
+   Categoría: 6ta C
+
+4. Sofia Martinez
+   DNI: 10000004
+   Categoría: 5ta C
+
+5. Juan Sosa
+   DNI: 10000005
+   Categoría: 4ta C
+
+---------------------------
+Para probar el sistema de parejas, podés iniciar sesión con uno y buscar el DNI de cualquiera de los otros.
