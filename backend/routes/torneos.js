@@ -871,6 +871,7 @@ router.get('/:id/bracket', async (req, res) => {
         );
 
         const getTeamCode = (zonaNombre, tpId, zonaId) => {
+            if (!zonaNombre || !tpId) return '-';
             const match = zonaNombre.match(/ZONA\s+([A-Z])/i);
             let letter = 'Z';
             if (match) {
@@ -939,8 +940,8 @@ router.get('/:id/bracket', async (req, res) => {
 
         res.json(mappedPartidos);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Error del servidor');
+        console.error('Error fetching bracket:', err);
+        res.status(500).json({ msg: 'Error al obtener llaves: ' + err.message });
     }
 });
 
