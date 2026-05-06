@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Swords, Calendar, Clock, Save, Loader2, CheckCircle, AlertCircle, Trash2, Edit2, Play, GitBranch } from 'lucide-react';
+import { Swords, Calendar, Clock, MapPin, Save, Loader2, CheckCircle, AlertCircle, Trash2, Edit2, Play, GitBranch } from 'lucide-react';
 import axios from 'axios';
 import Toast from '../../components/Toast';
 import Modal from '../../components/Modal';
@@ -93,19 +93,25 @@ const ClassificationManagement = () => {
             // Reconstruct fecha_partido string
             let fecha_partido = null;
             if (editingMatch.fecha && editingMatch.hora) {
-                fecha_partido = `${editingMatch.fecha} ${editingMatch.hora}:00`;
+                // Normalize date to YYYY-MM-DD if it comes in DD/MM/YYYY
+                let datePart = editingMatch.fecha;
+                if (datePart.includes('/')) {
+                    const [d, m, y] = datePart.split('/');
+                    datePart = `${y}-${m}-${d}`;
+                }
+                fecha_partido = `${datePart} ${editingMatch.hora}:00`;
             }
 
             const payload = {
-                set1_p1: editingMatch.set1_p1 === '' ? null : parseInt(editingMatch.set1_p1),
-                set1_p2: editingMatch.set1_p2 === '' ? null : parseInt(editingMatch.set1_p2),
-                set2_p1: editingMatch.set2_p1 === '' ? null : parseInt(editingMatch.set2_p1),
-                set2_p2: editingMatch.set2_p2 === '' ? null : parseInt(editingMatch.set2_p2),
-                set3_p1: (editingMatch.hasSet3 && editingMatch.set3_p1 !== '') ? parseInt(editingMatch.set3_p1) : null,
-                set3_p2: (editingMatch.hasSet3 && editingMatch.set3_p2 !== '') ? parseInt(editingMatch.set3_p2) : null,
-                estado: editingMatch.estado,
-                fecha_partido,
-                sede_id: editingMatch.sede_id || null
+                set1_p1: (editingMatch.set1_p1 !== '' && editingMatch.set1_p1 !== undefined) ? parseInt(editingMatch.set1_p1) : null,
+                set1_p2: (editingMatch.set1_p2 !== '' && editingMatch.set1_p2 !== undefined) ? parseInt(editingMatch.set1_p2) : null,
+                set2_p1: (editingMatch.set2_p1 !== '' && editingMatch.set2_p1 !== undefined) ? parseInt(editingMatch.set2_p1) : null,
+                set2_p2: (editingMatch.set2_p2 !== '' && editingMatch.set2_p2 !== undefined) ? parseInt(editingMatch.set2_p2) : null,
+                set3_p1: (editingMatch.hasSet3 && editingMatch.set3_p1 !== '' && editingMatch.set3_p1 !== undefined) ? parseInt(editingMatch.set3_p1) : null,
+                set3_p2: (editingMatch.hasSet3 && editingMatch.set3_p2 !== '' && editingMatch.set3_p2 !== undefined) ? parseInt(editingMatch.set3_p2) : null,
+                estado: editingMatch.estado || 'PENDIENTE',
+                fecha_partido: fecha_partido,
+                sede_id: editingMatch.sede_id ? parseInt(editingMatch.sede_id) : null
             };
 
             await axios.put(`/api/torneos/${id}/partidos/${editingMatch.id}`, payload);
@@ -114,7 +120,8 @@ const ClassificationManagement = () => {
             fetchData();
         } catch (err) {
             console.error('Error updating match:', err);
-            setToast({ type: 'error', message: 'Error al actualizar el partido' });
+            const serverMsg = err.response?.data?.msg || 'Error al actualizar el partido';
+            setToast({ type: 'error', message: serverMsg });
         } finally {
             setSaving(false);
         }
@@ -205,27 +212,27 @@ const ClassificationManagement = () => {
                                             </div>
                                         </div>
 
-                                        {match.fecha_original ? (
-                                            <div className="flex flex-col gap-1 px-1">
+                                        <div className="flex flex-col gap-2 px-1">
+                                            {match.fecha_original ? (
                                                 <div className="flex items-center gap-2">
                                                     <Calendar size={12} className="text-brand-gray" />
                                                     <span className="text-[9px] font-bold text-brand-gray uppercase italic">
                                                         {new Date(match.fecha_original).toLocaleDateString('es-AR')} - {new Date(match.fecha_original).toTimeString().substring(0, 5)} HS
                                                     </span>
                                                 </div>
-                                                {match.sede_nombre && (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[10px]">🏟️</span>
-                                                        <span className="text-[9px] font-bold text-brand-dark uppercase">{match.sede_nombre}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-2 px-1 text-amber-500/50">
-                                                <Clock size={12} />
-                                                <span className="text-[9px] font-black uppercase tracking-widest italic">Fecha no definida</span>
-                                            </div>
-                                        )}
+                                            ) : (
+                                                <div className="flex items-center gap-2 text-amber-500/50">
+                                                    <Clock size={12} />
+                                                    <span className="text-[9px] font-black uppercase tracking-widest italic">Fecha no definida</span>
+                                                </div>
+                                            )}
+                                            {match.sede_nombre && (
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin size={12} className="text-brand-dark/40" />
+                                                    <span className="text-[9px] font-black text-brand-dark uppercase">{match.sede_nombre}</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <button

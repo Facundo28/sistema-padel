@@ -240,17 +240,30 @@ const TournamentClassification = () => {
                                                 </div>
                                             </div>
 
-                                            {match.fecha_original && (
-                                                <div className="mt-6 pt-4 border-t border-gray-50 flex items-center justify-center gap-3">
-                                                    <div className="flex items-center gap-2 text-[10px] font-black text-brand-gray uppercase tracking-widest">
-                                                        <Calendar size={14} className="text-brand-dark/20" />
-                                                        {new Date(match.fecha_original).toLocaleDateString('es-AR')}
-                                                    </div>
-                                                    <div className="w-1 h-1 bg-gray-200 rounded-full"></div>
-                                                    <div className="flex items-center gap-2 text-[10px] font-black text-brand-gray uppercase tracking-widest">
-                                                        <Clock size={14} className="text-brand-dark/20" />
-                                                        {new Date(match.fecha_original).toTimeString().substring(0, 5)} HS
-                                                    </div>
+                                            {(match.fecha_original || match.sede_nombre) && (
+                                                <div className="mt-6 pt-4 border-t border-gray-50 flex flex-wrap items-center justify-center gap-y-2 gap-x-4">
+                                                    {match.fecha_original && (
+                                                        <>
+                                                            <div className="flex items-center gap-2 text-[10px] font-black text-brand-gray uppercase tracking-widest">
+                                                                <Calendar size={14} className="text-brand-dark/20" />
+                                                                {new Date(match.fecha_original).toLocaleDateString('es-AR')}
+                                                            </div>
+                                                            <div className="w-1 h-1 bg-gray-200 rounded-full hidden sm:block"></div>
+                                                            <div className="flex items-center gap-2 text-[10px] font-black text-brand-gray uppercase tracking-widest">
+                                                                <Clock size={14} className="text-brand-dark/20" />
+                                                                {new Date(match.fecha_original).toTimeString().substring(0, 5)} HS
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                    {match.fecha_original && match.sede_nombre && (
+                                                        <div className="w-1 h-1 bg-gray-200 rounded-full hidden sm:block"></div>
+                                                    )}
+                                                    {match.sede_nombre && (
+                                                        <div className="flex items-center gap-2 text-[10px] font-black text-brand-gray uppercase tracking-widest">
+                                                            <MapPin size={14} className="text-brand-dark/20" />
+                                                            {match.sede_nombre}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>

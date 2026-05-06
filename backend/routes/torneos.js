@@ -395,17 +395,31 @@ router.get('/:id/inscriptos', async (req, res) => {
 // @route   PUT api/torneos/:id/partidos/:pId
 // @desc    Update a match score and status
 router.put('/:id/partidos/:pId', async (req, res) => {
-    const { 
-        set1_p1, set1_p2, set2_p1, set2_p2, set3_p1, set3_p2, 
-        estado, fecha_partido, sede_id 
-    } = req.body;
     const { id, pId } = req.params;
+    const body = req.body;
+
+    // Normalize ALL values to prevent undefined from reaching mysql2
+    const normalizeScore = (val) => {
+        if (val === undefined || val === null || val === '') return null;
+        const parsed = parseInt(val);
+        return isNaN(parsed) ? null : parsed;
+    };
+
+    const set1_p1 = normalizeScore(body.set1_p1);
+    const set1_p2 = normalizeScore(body.set1_p2);
+    const set2_p1 = normalizeScore(body.set2_p1);
+    const set2_p2 = normalizeScore(body.set2_p2);
+    const set3_p1 = normalizeScore(body.set3_p1);
+    const set3_p2 = normalizeScore(body.set3_p2);
+    const estado = body.estado ?? 'PENDIENTE';
+    const fecha_partido = body.fecha_partido ?? null;
+    const finalSedeId = normalizeScore(body.sede_id);
 
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
-        // 1. Get current match data to know if it belongs to a zone
+        // 1. Get current match data
         const [mRows] = await connection.execute('SELECT * FROM partidos WHERE id = ?', [pId]);
         if (mRows.length === 0) {
             await connection.rollback();
@@ -419,7 +433,7 @@ router.put('/:id/partidos/:pId', async (req, res) => {
              set1_p1 = ?, set1_p2 = ?, set2_p1 = ?, set2_p2 = ?, set3_p1 = ?, set3_p2 = ?, 
              estado = ?, fecha_partido = ?, sede_id = ? 
              WHERE id = ?`,
-            [set1_p1, set1_p2, set2_p1, set2_p2, set3_p1 || null, set3_p2 || null, estado, fecha_partido, sede_id || null, pId]
+            [set1_p1, set1_p2, set2_p1, set2_p2, set3_p1, set3_p2, estado, fecha_partido, finalSedeId, pId]
         );
 
         // 3. Handle advancement/standings
@@ -434,8 +448,8 @@ router.put('/:id/partidos/:pId', async (req, res) => {
         res.json({ msg: 'Partido actualizado correctamente' });
     } catch (err) {
         await connection.rollback();
-        console.error(err.message);
-        res.status(500).send('Error del servidor');
+        console.error('Error updating match details:', err);
+        res.status(500).json({ msg: 'Error al actualizar: ' + err.message });
     } finally {
         connection.release();
     }
@@ -606,6 +620,8 @@ router.post('/:id/zonas/:zId/generar-partidos', async (req, res) => {
             await connection.rollback();
             return res.status(400).json({ msg: 'Ya existen partidos generados para esta zona' });
         }
+
+        const pIds = participantes.map(p => p.pareja_id);
 
         if (pIds.length === 4) {
             // Generate initial 2 matches for zone of 4
@@ -1179,7 +1195,7 @@ router.post('/:id/zonas/auto-generar', async (req, res) => {
                 }
             }
 
-            zoneCounter++;
+            // zoneCounter removal
         }
 
         await connection.commit();
