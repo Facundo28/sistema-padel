@@ -36,7 +36,7 @@ const TorneoZonasAdmin = () => {
                 // Initial load with no zones in DB
                 if (isFirstLoad && dbZoneNames.length === 0 && prev.length === 0) {
                     setIsFirstLoad(false);
-                    return ['ZONA 1', 'ZONA 2', 'ZONA 3'];
+                    return ['ZONA A', 'ZONA B', 'ZONA C'];
                 }
                 setIsFirstLoad(false);
 
@@ -44,11 +44,7 @@ const TorneoZonasAdmin = () => {
                 const phantomZones = prev.filter(p => !dbZoneNames.includes(p));
                 
                 const combined = [...new Set([...dbZoneNames, ...phantomZones])];
-                return combined.sort((a, b) => {
-                    const numA = parseInt(a.match(/\d+/)?.[0] || 0);
-                    const numB = parseInt(b.match(/\d+/)?.[0] || 0);
-                    return numA - numB;
-                });
+                return combined.sort((a, b) => a.localeCompare(b));
             });
 
             if (found) {
@@ -176,8 +172,8 @@ const TorneoZonasAdmin = () => {
     }
 
     const addZone = () => {
-        const nextNum = activeZones.length + 1;
-        setActiveZones([...activeZones, `ZONA ${nextNum}`]);
+        const nextLetter = String.fromCharCode(65 + activeZones.length); // A, B, C...
+        setActiveZones([...activeZones, `ZONA ${nextLetter}`]);
     };
 
     const removeZone = async (zName) => {

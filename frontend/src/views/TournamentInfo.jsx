@@ -45,7 +45,7 @@ const TournamentInfo = () => {
     const dataCards = [
         { label: 'Costo de Inscripción', value: torneo.costo_inscripcion, icon: DollarSign, color: 'text-green-500' },
         { label: 'Localidad', value: torneo.localidad, icon: Map, color: 'text-blue-500' },
-        { label: 'Ubicación / Club', value: torneo.ubicacion, icon: MapPin, color: 'text-red-500' },
+        { label: 'Ubicación / Club', value: torneo.sedes_nombres || torneo.ubicacion, icon: MapPin, color: 'text-red-500' },
         { label: 'Modalidad', value: torneo.modalidad, icon: Target, color: 'text-purple-500' },
         { label: 'Categoría', value: torneo.categoria, icon: Users, color: 'text-amber-500' },
         { label: 'Sistema de Competencia', value: torneo.sistema_competencia, icon: Swords, color: 'text-brand-dark' },

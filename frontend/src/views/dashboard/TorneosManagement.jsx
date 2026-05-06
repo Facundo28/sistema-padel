@@ -44,7 +44,7 @@ const TorneosManagement = () => {
         categoria: 'Caballeros Primera (1ra C)',
         fecha: '',
         ubicacion: '',
-        sede_id: '',
+        sede_ids: [],
         estado: 'INSCRIPCIONES',
         cupo: 32,
         costo_inscripcion: '',
@@ -52,6 +52,8 @@ const TorneosManagement = () => {
         modalidad: '',
         sistema_competencia: ''
     });
+
+    const [editingId, setEditingId] = useState(null);
 
     const fetchTorneos = async () => {
         try {
@@ -93,19 +95,42 @@ const TorneosManagement = () => {
     const handleSave = async (e) => {
         e.preventDefault();
         try {
-            await axios.post(`/api/torneos`, newTorneo);
+            if (editingId) {
+                await axios.put(`/api/torneos/${editingId}`, newTorneo);
+                setToast({ type: 'success', message: '¡Torneo actualizado exitosamente!' });
+            } else {
+                await axios.post(`/api/torneos`, newTorneo);
+                setToast({ type: 'success', message: '¡Torneo creado exitosamente!' });
+            }
             setIsAddModalOpen(false);
-            setToast({ type: 'success', message: '¡Torneo creado exitosamente!' });
+            setEditingId(null);
             setNewTorneo({
                 nombre: '', descripcion: '', imagen: '',
                 categoria: 'Caballeros Primera (1ra C)',
-                fecha: '', ubicacion: '', sede_id: '', estado: 'INSCRIPCIONES', cupo: 32,
+                fecha: '', ubicacion: '', sede_ids: [], estado: 'INSCRIPCIONES', cupo: 32,
                 costo_inscripcion: '', localidad: '', modalidad: '', sistema_competencia: ''
             });
             fetchTorneos();
         } catch (err) {
-            setToast({ type: 'error', message: 'Error al crear el torneo' });
+            setToast({ type: 'error', message: editingId ? 'Error al actualizar el torneo' : 'Error al crear el torneo' });
         }
+    };
+
+    const handleEdit = (torneo) => {
+        const formattedFecha = torneo.fecha ? new Date(torneo.fecha).toISOString().split('T')[0] : '';
+        
+        // Parse sede_ids_raw from backend (e.g., "1,2,3") into [1, 2, 3]
+        const parsedSedeIds = torneo.sede_ids_raw 
+            ? torneo.sede_ids_raw.split(',').map(id => parseInt(id)) 
+            : [];
+        
+        setEditingId(torneo.id);
+        setNewTorneo({
+            ...torneo,
+            fecha: formattedFecha,
+            sede_ids: parsedSedeIds
+        });
+        setIsAddModalOpen(true);
     };
 
     const handleEstadoChange = async (id, nuevoEstado) => {
@@ -210,12 +235,12 @@ const TorneosManagement = () => {
                                     <span className="px-2 py-0.5 bg-gray-50 border border-gray-100 rounded">
                                         {new Date(torneo.fecha).toLocaleDateString('es-AR')}
                                     </span>
-                                    {torneo.sede_nombre && (
+                                    {torneo.sedes_nombres && (
                                         <span className="px-2 py-0.5 bg-gray-50 border border-brand-dark/20 text-brand-dark rounded flex items-center gap-1">
-                                            <span>🏟️</span> {torneo.sede_nombre}
+                                            <span>🏟️</span> {torneo.sedes_nombres}
                                         </span>
                                     )}
-                                    {torneo.ubicacion && !torneo.sede_nombre && (
+                                    {torneo.ubicacion && !torneo.sedes_nombres && (
                                         <span className="px-2 py-0.5 bg-gray-50 border border-gray-100 rounded">
                                             {torneo.ubicacion}
                                         </span>
@@ -236,6 +261,12 @@ const TorneosManagement = () => {
                                     </select>
 
                                     <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => handleEdit(torneo)}
+                                            className="p-2 text-gray-400 hover:text-brand-dark hover:bg-gray-50 rounded-md transition-all border border-gray-100"
+                                        >
+                                            <Edit2 size={14} />
+                                        </button>
                                         <button
                                             onClick={() => handleDelete(torneo.id)}
                                             className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all border border-gray-100"
@@ -284,12 +315,34 @@ const TorneosManagement = () => {
                             <label className={labelClass}>Fecha</label>
                             <input required type="date" name="fecha" value={newTorneo.fecha} onChange={handleChange} className={inputClass} />
                         </div>
-                        <div>
-                            <label className={labelClass}>Sede Oficial</label>
-                            <select name="sede_id" value={newTorneo.sede_id} onChange={handleChange} className={inputClass}>
-                                <option value="">Selecciona una Sede...</option>
-                                {sedes.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-                            </select>
+                        <div className="col-span-full">
+                            <label className={labelClass}>Sedes del Torneo (Selecciona una o más)</label>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
+                                {sedes.map(s => (
+                                    <div 
+                                        key={s.id} 
+                                        onClick={() => {
+                                            const current = newTorneo.sede_ids || [];
+                                            const updated = current.includes(s.id) 
+                                                ? current.filter(id => id !== s.id)
+                                                : [...current, s.id];
+                                            setNewTorneo({ ...newTorneo, sede_ids: updated });
+                                        }}
+                                        className={`cursor-pointer px-4 py-3 rounded-lg border text-xs font-bold transition-all flex items-center gap-3 ${
+                                            (newTorneo.sede_ids || []).includes(s.id)
+                                                ? 'bg-brand-dark text-white border-brand-dark shadow-md'
+                                                : 'bg-white text-gray-500 border-gray-100 hover:border-brand-dark/20'
+                                        }`}
+                                    >
+                                        <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                                            (newTorneo.sede_ids || []).includes(s.id) ? 'bg-white border-white' : 'border-gray-200'
+                                        }`}>
+                                            {(newTorneo.sede_ids || []).includes(s.id) && <div className="w-2 h-2 bg-brand-dark rounded-full" />}
+                                        </div>
+                                        {s.nombre}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                         <div>
                             <label className={labelClass}>Ubicación Detallada (Opcional)</label>
@@ -340,7 +393,7 @@ const TorneosManagement = () => {
                             type="submit"
                             className="px-8 py-3 bg-brand-dark text-white text-[11px] font-black tracking-widest rounded-lg hover:bg-black transition-all shadow-lg shadow-black/10 uppercase"
                         >
-                            Crear Torneo
+                            {editingId ? 'Guardar Cambios' : 'Crear Torneo'}
                         </button>
                     </div>
                 </form>

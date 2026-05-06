@@ -8,10 +8,11 @@ const db = require('../config/db');
 router.get('/', async (req, res) => {
     try {
         const { estado } = req.query;
-        let sql = `SELECT t.*, s.nombre as sede_nombre, 
+        let sql = `SELECT t.*, 
+                   (SELECT GROUP_CONCAT(s.nombre SEPARATOR ', ') FROM torneo_sedes ts JOIN sedes s ON ts.sede_id = s.id WHERE ts.torneo_id = t.id) as sedes_nombres,
+                   (SELECT GROUP_CONCAT(ts.sede_id) FROM torneo_sedes ts WHERE ts.torneo_id = t.id) as sede_ids_raw,
                    (SELECT COUNT(*) FROM inscripciones i WHERE i.torneo_id = t.id AND i.estado = 'CONFIRMADA') as inscriptos 
-                   FROM torneos t
-                   LEFT JOIN sedes s ON t.sede_id = s.id`;
+                   FROM torneos t`;
         const params = [];
 
         if (estado) {
@@ -37,7 +38,20 @@ router.get('/:id', async (req, res) => {
         if (rows.length === 0) {
             return res.status(404).json({ msg: 'Torneo no encontrado' });
         }
-        res.json(rows[0]);
+        
+        const torneo = rows[0];
+
+        // Fetch sedes
+        const [sedes] = await db.execute(
+            `SELECT s.* FROM sedes s 
+             JOIN torneo_sedes ts ON s.id = ts.sede_id 
+             WHERE ts.torneo_id = ?`,
+            [req.params.id]
+        );
+        
+        torneo.sedes = sedes;
+        
+        res.json(torneo);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Error del servidor');
@@ -61,10 +75,13 @@ router.post(
 
         const { 
             nombre, descripcion, imagen, categoria, fecha, ubicacion, estado, cupo,
-            costo_inscripcion, localidad, modalidad, sistema_competencia, sede_id
+            costo_inscripcion, localidad, modalidad, sistema_competencia, sede_id, sede_ids
         } = req.body;
 
+        const connection = await db.getConnection();
         try {
+            await connection.beginTransaction();
+
             const sql = `INSERT INTO torneos (
                             nombre, descripcion, imagen, categoria, fecha, ubicacion, 
                             estado, cupo, costo_inscripcion, localidad, modalidad, sistema_competencia, sede_id
@@ -86,20 +103,34 @@ router.post(
                 sede_id || null
             ];
 
-            const [result] = await db.execute(sql, values);
+            const [result] = await connection.execute(sql, values);
+            const tournamentId = result.insertId;
+
+            // Insert into torneo_sedes
+            const finalSedeIds = sede_ids || (sede_id ? [sede_id] : []);
+            if (finalSedeIds.length > 0) {
+                for (const sId of finalSedeIds) {
+                    await connection.execute(
+                        'INSERT INTO torneo_sedes (torneo_id, sede_id) VALUES (?, ?)',
+                        [tournamentId, sId]
+                    );
+                }
+            }
 
             // Auto-insert into circuit_events
             try {
-                await db.execute(
+                await connection.execute(
                     'INSERT INTO circuit_events (titulo, descripcion, fecha, tipo, torneo_id, imagen) VALUES (?, ?, ?, ?, ?, ?)',
-                    [nombre, descripcion || null, fecha, 'TORNEO', result.insertId, imagen || null]
+                    [nombre, descripcion || null, fecha, 'TORNEO', tournamentId, imagen || null]
                 );
             } catch (circuitErr) {
                 console.error("Error auto-adding to circuit_events:", circuitErr);
             }
 
+            await connection.commit();
+
             res.status(201).json({
-                id: result.insertId,
+                id: tournamentId,
                 nombre, descripcion, imagen, categoria, fecha, ubicacion,
                 estado: estado || 'INSCRIPCIONES',
                 cupo: cupo || 32,
@@ -107,8 +138,11 @@ router.post(
                 msg: '¡Torneo creado!'
             });
         } catch (err) {
+            await connection.rollback();
             console.error(err.message);
             res.status(500).send('Error del servidor');
+        } finally {
+            connection.release();
         }
     }
 );
@@ -118,13 +152,23 @@ router.post(
 router.put('/:id', async (req, res) => {
     const { 
         nombre, descripcion, imagen, categoria, fecha, ubicacion, estado, cupo,
-        costo_inscripcion, localidad, modalidad, sistema_competencia, sede_id
+        costo_inscripcion, localidad, modalidad, sistema_competencia, sede_id, sede_ids
     } = req.body;
 
+    const connection = await db.getConnection();
     try {
-        const [existing] = await db.execute('SELECT id FROM torneos WHERE id = ?', [req.params.id]);
+        await connection.beginTransaction();
+
+        const [existing] = await connection.execute('SELECT id FROM torneos WHERE id = ?', [req.params.id]);
         if (existing.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ msg: 'Torneo no encontrado' });
+        }
+
+        // Formatear fecha si viene en formato ISO (del frontend)
+        let formattedFecha = fecha;
+        if (fecha && typeof fecha === 'string' && fecha.includes('T')) {
+            formattedFecha = fecha.split('T')[0];
         }
 
         const sql = `UPDATE torneos SET 
@@ -133,16 +177,48 @@ router.put('/:id', async (req, res) => {
                      costo_inscripcion = ?, localidad = ?, modalidad = ?, sistema_competencia = ?, sede_id = ?
                      WHERE id = ?`;
         const values = [
-            nombre, descripcion, imagen, categoria, fecha, ubicacion, estado, cupo,
-            costo_inscripcion, localidad, modalidad, sistema_competencia, sede_id || null,
+            nombre, 
+            descripcion || null, 
+            imagen || null, 
+            categoria, 
+            formattedFecha, 
+            ubicacion || null, 
+            estado, 
+            cupo || 32,
+            costo_inscripcion || null, 
+            localidad || null, 
+            modalidad || null, 
+            sistema_competencia || null, 
+            sede_id || (sede_ids && sede_ids.length > 0 ? sede_ids[0] : null),
             req.params.id
         ];
 
-        await db.execute(sql, values);
+        await connection.execute(sql, values);
+
+        // Update torneo_sedes
+        if (sede_ids) {
+            // Remove old associations
+            await connection.execute('DELETE FROM torneo_sedes WHERE torneo_id = ?', [req.params.id]);
+            
+            // Insert new ones
+            if (sede_ids.length > 0) {
+                for (const sId of sede_ids) {
+                    await connection.execute(
+                        'INSERT INTO torneo_sedes (torneo_id, sede_id) VALUES (?, ?)',
+                        [req.params.id, sId]
+                    );
+                }
+            }
+        }
+
+        await connection.commit();
         res.json({ msg: 'Torneo actualizado', id: parseInt(req.params.id) });
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Error del servidor');
+        await connection.rollback();
+        console.error('Error al actualizar torneo:', err.message);
+        res.status(500).json({ msg: 'Error del servidor al actualizar el torneo', error: err.message });
+    } finally {
+        connection.release();
     }
 });
 
@@ -203,9 +279,12 @@ router.get('/:id/clasificacion', async (req, res) => {
 
         // Helper to get zone letter
         const getZoneLetter = (name) => {
+            const match = name.match(/ZONA\s+([A-Z])/i);
+            if (match) return match[1].toUpperCase();
+            // Fallback for old numeric names if any
             const num = name.match(/\d+/);
-            if (!num) return 'Z';
-            return String.fromCharCode(64 + parseInt(num[0])); // 1 -> A, 2 -> B
+            if (num) return String.fromCharCode(64 + parseInt(num[0]));
+            return 'Z';
         };
 
         const formatLocality = (l1, l2) => {
@@ -346,6 +425,7 @@ router.put('/:id/partidos/:pId', async (req, res) => {
         // 3. Handle advancement/standings
         if (match.zona_id) {
             await updateZoneStandings(connection, id, match.zona_id);
+            await checkZoneAdvancement(connection, id, match.zona_id);
         } else if (match.fase && match.fase !== 'ZONAS' && estado === 'JUGADO') {
             await updatePlayoffAdvancement(connection, id, match.fase, match.orden_fase);
         }
@@ -528,12 +608,15 @@ router.post('/:id/zonas/:zId/generar-partidos', async (req, res) => {
         }
 
         if (pIds.length === 4) {
-            // Generate specific 4 matches for zone of 4 (2 matches per team)
-            const matches = [[0, 1], [2, 3], [0, 2], [1, 3]];
-            for (const [i, j] of matches) {
+            // Generate initial 2 matches for zone of 4
+            // Match 1: P1 vs P2 (orden_fase 1)
+            // Match 2: P3 vs P4 (orden_fase 2)
+            const matches = [[0, 1], [2, 3]];
+            for (let i = 0; i < matches.length; i++) {
+                const [p1Idx, p2Idx] = matches[i];
                 await connection.execute(
-                    'INSERT INTO partidos (torneo_id, zona_id, pareja1_id, pareja2_id, estado) VALUES (?, ?, ?, ?, ?)',
-                    [id, zId, pIds[i], pIds[j], 'PENDIENTE']
+                    'INSERT INTO partidos (torneo_id, zona_id, pareja1_id, pareja2_id, estado, orden_fase) VALUES (?, ?, ?, ?, ?, ?)',
+                    [id, zId, pIds[p1Idx], pIds[p2Idx], 'PENDIENTE', i + 1]
                 );
             }
         } else {
@@ -772,9 +855,14 @@ router.get('/:id/bracket', async (req, res) => {
         );
 
         const getTeamCode = (zonaNombre, tpId, zonaId) => {
-            if (!zonaNombre || !tpId) return '';
-            const numMatch = zonaNombre.match(/\d+/);
-            const letter = numMatch ? String.fromCharCode(64 + parseInt(numMatch[0])) : 'Z';
+            const match = zonaNombre.match(/ZONA\s+([A-Z])/i);
+            let letter = 'Z';
+            if (match) {
+                letter = match[1].toUpperCase();
+            } else {
+                const numMatch = zonaNombre.match(/\d+/);
+                letter = numMatch ? String.fromCharCode(64 + parseInt(numMatch[0])) : 'Z';
+            }
             
             const zoneParticipants = allParticipantes.filter(p => p.zona_id === zonaId);
             const pos = zoneParticipants.findIndex(p => p.id === tpId) + 1;
@@ -851,24 +939,8 @@ async function updatePlayoffAdvancement(connection, torneoId, fase, ordenFase) {
     if (match.estado !== 'JUGADO') return;
 
     // 2. Identify winner
-    let winnerId = null;
-    let p1_sets = 0; let p2_sets = 0;
-    if (match.set1_p1 > match.set1_p2) p1_sets++; else if (match.set1_p2 > match.set1_p1) p2_sets++;
-    if (match.set2_p1 > match.set2_p2) p1_sets++; else if (match.set2_p2 > match.set2_p1) p2_sets++;
-    if (match.set3_p1 !== null && match.set3_p2 !== null) {
-        if (match.set3_p1 > match.set3_p2) p1_sets++; else if (match.set3_p2 > match.set3_p1) p2_sets++;
-    }
-    if (p1_sets > p2_sets) winnerId = match.pareja1_id;
-    else if (p2_sets > p1_sets) winnerId = match.pareja2_id;
-    else {
-        // Tie-breaker by games if sets are equal
-        const p1_games = (match.set1_p1 || 0) + (match.set2_p1 || 0) + (match.set3_p1 || 0);
-        const p2_games = (match.set1_p2 || 0) + (match.set2_p2 || 0) + (match.set3_p2 || 0);
-        if (p1_games > p2_games) winnerId = match.pareja1_id;
-        else winnerId = match.pareja2_id;
-    }
-
-    if (!winnerId) return;
+    const { winner } = getMatchWinnerAndLoser(match);
+    if (!winner) return;
 
     // 3. Determine next phase
     const phases = ['8VOS', '4TOS', 'SEMIFINAL', 'FINAL'];
@@ -883,8 +955,91 @@ async function updatePlayoffAdvancement(connection, torneoId, fase, ordenFase) {
     const parejaColumn = isPareja2 ? 'pareja2_id' : 'pareja1_id';
     await connection.execute(
         `UPDATE partidos SET ${parejaColumn} = ? WHERE torneo_id = ? AND fase = ? AND orden_fase = ?`,
-        [winnerId, torneoId, nextFase, nextOrden]
+        [winner, torneoId, nextFase, nextOrden]
     );
+}
+
+function getMatchWinnerAndLoser(match) {
+    let p1_sets = 0; let p2_sets = 0;
+    if (match.set1_p1 > match.set1_p2) p1_sets++; else if (match.set1_p2 > match.set1_p1) p2_sets++;
+    if (match.set2_p1 > match.set2_p2) p1_sets++; else if (match.set2_p2 > match.set2_p1) p2_sets++;
+    if (match.set3_p1 !== null && match.set3_p2 !== null) {
+        if (match.set3_p1 > match.set3_p2) p1_sets++; else if (match.set3_p2 > match.set3_p1) p2_sets++;
+    }
+
+    let winner = null;
+    let loser = null;
+
+    if (p1_sets > p2_sets) {
+        winner = match.pareja1_id;
+        loser = match.pareja2_id;
+    } else if (p2_sets > p1_sets) {
+        winner = match.pareja2_id;
+        loser = match.pareja1_id;
+    } else {
+        // Tie-breaker by games
+        const p1_games = (match.set1_p1 || 0) + (match.set2_p1 || 0) + (match.set3_p1 || 0);
+        const p2_games = (match.set1_p2 || 0) + (match.set2_p2 || 0) + (match.set3_p2 || 0);
+        if (p1_games > p2_games) {
+            winner = match.pareja1_id;
+            loser = match.pareja2_id;
+        } else {
+            winner = match.pareja2_id;
+            loser = match.pareja1_id;
+        }
+    }
+    return { winner, loser };
+}
+
+async function checkZoneAdvancement(connection, torneoId, zonaId) {
+    // 1. Get all participants in the zone to check size
+    const [participantes] = await connection.execute(
+        'SELECT pareja_id FROM torneo_participantes WHERE torneo_id = ? AND zona_id = ?',
+        [torneoId, zonaId]
+    );
+    if (participantes.length !== 4) return;
+
+    // 2. Get current matches for this zone
+    const [partidos] = await connection.execute(
+        'SELECT * FROM partidos WHERE torneo_id = ? AND zona_id = ?',
+        [torneoId, zonaId]
+    );
+
+    const m1 = partidos.find(m => m.orden_fase === 1);
+    const m2 = partidos.find(m => m.orden_fase === 2);
+
+    // 3. If Match 1 and Match 2 are played, generate or update Match 3 and 4
+    if (m1?.estado === 'JUGADO' && m2?.estado === 'JUGADO') {
+        const res1 = getMatchWinnerAndLoser(m1);
+        const res2 = getMatchWinnerAndLoser(m2);
+
+        const m3 = partidos.find(m => m.orden_fase === 3);
+        const m4 = partidos.find(m => m.orden_fase === 4);
+
+        if (!m3) {
+            await connection.execute(
+                'INSERT INTO partidos (torneo_id, zona_id, pareja1_id, pareja2_id, estado, orden_fase) VALUES (?, ?, ?, ?, ?, ?)',
+                [torneoId, zonaId, res1.winner, res2.winner, 'PENDIENTE', 3]
+            );
+        } else {
+            await connection.execute(
+                'UPDATE partidos SET pareja1_id = ?, pareja2_id = ? WHERE id = ?',
+                [res1.winner, res2.winner, m3.id]
+            );
+        }
+
+        if (!m4) {
+            await connection.execute(
+                'INSERT INTO partidos (torneo_id, zona_id, pareja1_id, pareja2_id, estado, orden_fase) VALUES (?, ?, ?, ?, ?, ?)',
+                [torneoId, zonaId, res1.loser, res2.loser, 'PENDIENTE', 4]
+            );
+        } else {
+            await connection.execute(
+                'UPDATE partidos SET pareja1_id = ?, pareja2_id = ? WHERE id = ?',
+                [res1.loser, res2.loser, m4.id]
+            );
+        }
+    }
 }
 
 // @route   POST api/torneos/:id/zonas/auto-generar
@@ -915,13 +1070,18 @@ router.post('/:id/zonas/auto-generar', async (req, res) => {
             3: { z3: 1, z4: 0 },
             4: { z3: 0, z4: 1 },
             6: { z3: 2, z4: 0 },
+            7: { z3: 1, z4: 1 },
             8: { z3: 0, z4: 2 },
             9: { z3: 3, z4: 0 },
             10: { z3: 2, z4: 1 },
+            11: { z3: 1, z4: 2 },
             12: { z3: 4, z4: 0 },
+            13: { z3: 3, z4: 1 },
+            14: { z3: 2, z4: 2 },
             15: { z3: 5, z4: 0 },
             16: { z3: 0, z4: 4 },
             18: { z3: 6, z4: 0 },
+            20: { z3: 0, z4: 5 },
             21: { z3: 7, z4: 0 },
             24: { z3: 8, z4: 0 },
             28: { z3: 0, z4: 7 },
@@ -965,20 +1125,19 @@ router.post('/:id/zonas/auto-generar', async (req, res) => {
 
         // 5. Create zones and assign
         let coupleIdx = 0;
-        let zoneCounter = 1;
 
         const totalZones = dist.z3 + dist.z4;
         
         for (let i = 0; i < totalZones; i++) {
-            // Decide side of zone (3 or 4). We'll do 3s first, then 4s, or interleave.
-            // Let's just do all z3 first, then all z4.
-            const isZone3 = i < dist.z3;
-            const size = isZone3 ? 3 : 4;
-
-            // Create zone
-            const zonaNombre = `ZONA ${zoneCounter}`;
+            // Process z4 zones first as requested
+            const isZone4 = i < dist.z4;
+            const size = isZone4 ? 4 : 3;
+            
+            const zonaLetra = String.fromCharCode(65 + i); // 0 -> A, 1 -> B...
+            const zonaNombre = `ZONA ${zonaLetra}`;
+            
             const [zRes] = await connection.execute(
-                'INSERT INTO torneo_zonas (torneo_id, nombre_zona) VALUES (?, ?)', 
+                'INSERT INTO torneo_zonas (torneo_id, nombre_zona) VALUES (?, ?)',
                 [torneo_id, zonaNombre]
             );
             const zonaId = zRes.insertId;
@@ -988,21 +1147,24 @@ router.post('/:id/zonas/auto-generar', async (req, res) => {
             for (let j = 0; j < size; j++) {
                 if (coupleIdx < uniqueCouples.length) {
                     const pid = uniqueCouples[coupleIdx++];
+                    assignedCouples.push(pid);
                     await connection.execute(
                         'INSERT INTO torneo_participantes (torneo_id, zona_id, pareja_id) VALUES (?, ?, ?)',
                         [torneo_id, zonaId, pid]
                     );
-                    assignedCouples.push(pid);
                 }
             }
 
             if (assignedCouples.length === 4) {
-                // Generate specific 4 matches for zone of 4 (2 matches per team)
-                const matches = [[0, 1], [2, 3], [0, 2], [1, 3]];
-                for (const [i, j] of matches) {
+                // Special sequential logic for zone of 4
+                // Match 1: P1 vs P2 (orden 1)
+                // Match 2: P3 vs P4 (orden 2)
+                const matches = [[0, 1], [2, 3]];
+                for (let x = 0; x < matches.length; x++) {
+                    const [p1Idx, p2Idx] = matches[x];
                     await connection.execute(
-                        'INSERT INTO partidos (torneo_id, zona_id, pareja1_id, pareja2_id, estado) VALUES (?, ?, ?, ?, ?)',
-                        [torneo_id, zonaId, assignedCouples[i], assignedCouples[j], 'PENDIENTE']
+                        'INSERT INTO partidos (torneo_id, zona_id, pareja1_id, pareja2_id, estado, orden_fase) VALUES (?, ?, ?, ?, ?, ?)',
+                        [torneo_id, zonaId, assignedCouples[p1Idx], assignedCouples[p2Idx], 'PENDIENTE', x + 1]
                     );
                 }
             } else {

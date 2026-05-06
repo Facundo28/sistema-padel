@@ -2,8 +2,7 @@ import { LayoutDashboard, Trophy, Swords, LayoutGrid, ExternalLink, Menu, X, Bar
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
-const Sidebar = () => {
-    const [isOpen, setIsOpen] = useState(true);
+const Sidebar = ({ isOpen, setIsOpen }) => {
     const location = useLocation();
 
     const menuItems = [
@@ -25,7 +24,21 @@ const Sidebar = () => {
     ];
 
     return (
-        <div className={`bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-20 relative flex flex-col h-screen transition-all duration-300 ${isOpen ? 'w-64' : 'w-20'}`}>
+        <>
+            {/* Mobile Overlay */}
+            {isOpen && (
+                <div 
+                    className="md:hidden fixed inset-0 bg-brand-dark/20 backdrop-blur-sm z-30"
+                    onClick={() => setIsOpen(false)}
+                />
+            )}
+
+            <div className={`
+                fixed md:relative
+                bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-40 
+                flex flex-col h-screen transition-all duration-300 
+                ${isOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0 w-64 md:w-20'}
+            `}>
             <div className="p-6 flex items-center justify-between border-b border-gray-50/50">
                 {isOpen && <h1 className="text-[10px] font-black tracking-[0.2em] text-gray-400 uppercase">AFORPA</h1>}
                 <button onClick={() => setIsOpen(!isOpen)} className="p-2 hover:bg-slate-50 text-slate-400 hover:text-brand-dark rounded-lg transition-colors">
@@ -62,6 +75,7 @@ const Sidebar = () => {
                 </Link>
             </div>
         </div>
+    </>
     );
 };
 

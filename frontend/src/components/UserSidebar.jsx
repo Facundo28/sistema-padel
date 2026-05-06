@@ -2,8 +2,7 @@ import { User, BarChart3, ClipboardList, Users, Menu, X, ExternalLink } from 'lu
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
-const UserSidebar = () => {
-    const [isOpen, setIsOpen] = useState(true);
+const UserSidebar = ({ isOpen, setIsOpen }) => {
     const location = useLocation();
 
     const menuItems = [
@@ -14,7 +13,22 @@ const UserSidebar = () => {
     ];
 
     return (
-        <div className={`bg-white border-r border-gray-100 flex flex-col sticky top-20 h-[calc(100vh-80px)] transition-all duration-300 z-30 ${isOpen ? 'w-64' : 'w-20'}`}>
+        <>
+            {/* Mobile Overlay */}
+            {isOpen && (
+                <div 
+                    className="md:hidden fixed inset-0 bg-brand-dark/20 backdrop-blur-sm z-40"
+                    onClick={() => setIsOpen(false)}
+                />
+            )}
+
+            <div className={`
+                fixed md:sticky top-0 md:top-20
+                bg-white border-r border-gray-100 
+                flex flex-col h-screen md:h-[calc(100vh-80px)] 
+                transition-all duration-300 z-50 md:z-30 
+                ${isOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0 w-64 md:w-20'}
+            `}>
             <div className="p-6 flex items-center justify-between">
                 {isOpen && <h1 className="text-[10px] font-black tracking-[0.2em] text-gray-400 uppercase">MI CUENTA</h1>}
                 <button 
@@ -55,6 +69,7 @@ const UserSidebar = () => {
                 </Link>
             </div>
         </div>
+    </>
     );
 };
 
